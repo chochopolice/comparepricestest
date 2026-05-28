@@ -222,14 +222,36 @@ async function searchItems() {
     storeMarkers.push({ marker, lat: row.lat, lng: row.lng });
   });
 }
-function populateFilters() {
-  if (CONFIG.DATA_SOURCE !== 'json') return;
-  const categories = [...new Set(
-    stores.flatMap(s => s.items.map(i => i.category).filter(Boolean))
-  )].sort((a, b) => a.localeCompare(b, 'ja'));
-  const storeTypes = [...new Set(
-    stores.map(s => s.type).filter(Boolean)
-  )].sort((a, b) => a.localeCompare(b, 'ja'));
+async function populateFilters() {
+  let categories = [];
+  let storeTypes = [];
+
+  if (CONFIG.DATA_SOURCE === 'json') {
+    categories = [...new Set(
+      stores.flatMap(s => s.items.map(i => i.category).filter(Boolean))
+    )].sort((a, b) => a.localeCompare(b, 'ja'));
+    storeTypes = [...new Set(
+      stores.map(s => s.type).filter(Boolean)
+    )].sort((a, b) => a.localeCompare(b, 'ja'));
+  } else if (CONFIG.DATA_SOURCE === 'supabase') {
+    const headers = {
+      apikey: CONFIG.SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${CONFIG.SUPABASE_ANON_KEY}`,
+    };
+
+    const [catRes, typeRes] = await Promise.all([
+      fetch(`${CONFIG.SUPABASE_URL}/rest/v1/product_groups?select=category&category=not.is.null&order=category`, { headers }),
+      fetch(`${CONFIG.SUPABASE_URL}/rest/v1/stores?select=type&type=not.is.null&order=type`, { headers }),
+    ]);
+
+    if (!catRes.ok || !typeRes.ok) {
+      throw new Error('Supabase からフィルター情報の取得に失敗しました。');
+    }
+
+    const [catRows, typeRows] = await Promise.all([catRes.json(), typeRes.json()]);
+    categories = [...new Set(catRows.map(r => r.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ja'));
+    storeTypes = [...new Set(typeRows.map(r => r.type).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ja'));
+  }
 
   categories.forEach(cat => {
     const opt = document.createElement('option');
