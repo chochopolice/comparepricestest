@@ -275,7 +275,7 @@ async function updateSubcategories() {
   if (!cat || CONFIG.DATA_SOURCE !== 'supabase') return;
   try {
     const res = await fetch(
-      `${CONFIG.SUPABASE_URL}/rest/v1/product_group?select=subcategory&subcategory=not.is.null&category=eq.${encodeURIComponent(cat)}&order=subcategory`,
+      ${CONFIG.SUPABASE_URL}/rest/v1/product_groups?select=subcategory&subcategory=not.is.null&category=eq.${encodeURIComponent(cat)}&order=subcategory`,
       { headers: { apikey: CONFIG.SUPABASE_ANON_KEY, Authorization: `Bearer ${CONFIG.SUPABASE_ANON_KEY}` } }
     );
     if (!res.ok) return;
