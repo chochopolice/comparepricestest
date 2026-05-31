@@ -31,7 +31,28 @@ function getDistanceKm(lat1,lng1,lat2,lng2){const R=6371;const dLat=(lat2-lat1)*
 function normalize(text){return String(text||"").normalize("NFKC").trim().toLowerCase().replace(/[\s　\-ー_]+/g,"")}
 function isLooseMatch(query,target){const q=normalize(query);const t=normalize(target);if(!q)return true;if(t.includes(q))return true;let qi=0;for(let i=0;i<t.length&&qi<q.length;i++){if(t[i]===q[qi])qi++}return qi===q.length}
 function formatDate(yyyymmdd){const value=String(yyyymmdd||"");if(value.length!==8)return value||"-";return value.slice(0,4)+"/"+value.slice(4,6)+"/"+value.slice(6,8)}
-function initMap(){map=L.map("map").setView([currentLocation.lat,currentLocation.lng],14);L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"&copy; OpenStreetMap contributors"}).addTo(map);userMarker=L.marker([currentLocation.lat,currentLocation.lng]).addTo(map).bindPopup("現在地");radiusCircle=L.circle([currentLocation.lat,currentLocation.lng],{radius:Number(radiusInput.value)*1000}).addTo(map)}
+const userLocationIcon = L.divIcon({
+  className: '',
+  html: `<div style="
+    width:22px;height:22px;
+    background:#4285F4;
+    border:3px solid #fff;
+    border-radius:50%;
+    box-shadow:0 2px 6px rgba(0,0,0,0.4);
+    position:relative;
+  ">
+    <div style="
+      position:absolute;top:50%;left:50%;
+      transform:translate(-50%,-50%);
+      width:8px;height:8px;
+      background:#fff;border-radius:50%;
+    "></div>
+  </div>`,
+  iconSize: [22, 22],
+  iconAnchor: [11, 11],
+  popupAnchor: [0, -14],
+});
+function initMap(){map=L.map("map").setView([currentLocation.lat,currentLocation.lng],14);L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"&copy; OpenStreetMap contributors"}).addTo(map);userMarker=L.marker([currentLocation.lat,currentLocation.lng],{icon:userLocationIcon}).addTo(map).bindPopup("現在地");radiusCircle=L.circle([currentLocation.lat,currentLocation.lng],{radius:Number(radiusInput.value)*1000}).addTo(map)}
 function updateUserLocation(lat,lng,labelText){currentLocation={lat,lng,label:labelText};userMarker.setLatLng([lat,lng]);radiusCircle.setLatLng([lat,lng]);map.setView([lat,lng],14);locationStatusEl.textContent=labelText}
 function clearStoreMarkers(){storeMarkers.forEach(marker=>map.removeLayer(marker));storeMarkers=[]}
 function onCardClick(index) {
