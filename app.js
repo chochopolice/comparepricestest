@@ -274,6 +274,10 @@ async function populateFilters() {
     storeTypes = [...new Set(typeRows.map(r => r.type).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ja'));
   }
 
+  // 既存のoption（すべて以外）をクリアして重複防止
+  [...categorySelect.options].slice(1).forEach(o => o.remove());
+  [...storeTypeSelect.options].slice(1).forEach(o => o.remove());
+
   categories.forEach(cat => {
     const opt = document.createElement('option');
     opt.value = opt.textContent = cat;
@@ -285,7 +289,8 @@ async function populateFilters() {
     storeTypeSelect.appendChild(opt);
   });
 
-  // カテゴリ変更時にサブカテゴリを動的更新
+  // カテゴリ変更時にサブカテゴリを動的更新（重複登録防止）
+  categorySelect.removeEventListener('change', updateSubcategories);
   categorySelect.addEventListener('change', updateSubcategories);
 }
 async function updateSubcategories() {
@@ -296,7 +301,8 @@ async function updateSubcategories() {
   if (!cat || CONFIG.DATA_SOURCE !== 'supabase') return;
   try {
     const res = await fetch(
-      `${CONFIG.SUPABASE_URL}/rest/v1/product_groups?select=subcategory&subcategory=not.is.null&category=eq.${encodeURIComponent(cat)}&order=subcategory`,
+      `${CONFIG.SUPABASE_URL}/rest/v1/product_groups?select=subcategory&subcategory=not.is.null&category=eq.${encodeURIComponent(cat)}&order=subcategory&limit=1000`,
+
       { headers: { apikey: CONFIG.SUPABASE_ANON_KEY, Authorization: `Bearer ${CONFIG.SUPABASE_ANON_KEY}` } }
     );
     if (!res.ok) return;
@@ -364,7 +370,7 @@ geocodeButton.addEventListener('click', geocodeAddress);
 keywordInput.addEventListener('keydown', e => { if (e.key === 'Enter') searchItems(); });
 addressInput.addEventListener('keydown', e => { if (e.key === 'Enter') geocodeAddress(); });
 
-categorySelect.addEventListener('change', () => { updateSubcategories(); searchItems(); });
+categorySelect.addEventListener('change', searchItems);
 storeTypeSelect.addEventListener('change', searchItems);
 sortSelect.addEventListener('change', searchItems);
 radiusInput.addEventListener('change', searchItems);
