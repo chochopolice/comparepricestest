@@ -64,6 +64,22 @@
       padding: 4px 7px; font-size: 12px; box-sizing: border-box; background: #fff;
     }
     .items-table input:focus, .items-table select:focus { outline: none; border-color: #2e5fa3; }
+    @media (max-width: 640px) {
+      .items-table .inp-name:focus {
+        position: fixed;
+        left: 12px;
+        right: 12px;
+        top: 50%;
+        z-index: 1000;
+        width: calc(100vw - 24px);
+        max-width: calc(100vw - 24px);
+        padding: 12px 14px;
+        border-color: #2e5fa3;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, .22);
+        font-size: 16px;
+        transform: translateY(-50%);
+      }
+    }
     .match-badge {
       font-size: 10px; font-weight: 700; padding: 2px 6px;
       border-radius: 99px; white-space: nowrap;
