@@ -386,3 +386,30 @@ input[readonly] {
 .receipt-standalone-panel {
   margin-bottom: 24px;
 }
+
+/* ── 複数商品検索（合計金額比較）用 ─────────────────────── */
+.result-item-line {
+  font-size: 12px;
+  color: #444;
+  margin-top: 3px;
+  line-height: 1.4;
+}
+.result-item-line .item-kw {
+  display: inline-block;
+  background: #eef3f8;
+  color: #1a3a5c;
+  border-radius: 4px;
+  padding: 0 5px;
+  margin-right: 4px;
+  font-size: 11px;
+}
+.result-item-line.missing {
+  color: #b04a4a;
+}
+.result-item-line.missing .item-kw {
+  background: #f8ecec;
+  color: #b04a4a;
+}
+.result-card.partial {
+  opacity: 0.85;
+}

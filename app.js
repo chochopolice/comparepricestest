@@ -30,6 +30,8 @@ const summaryTextEl    = document.getElementById('summaryText');
 function getDistanceKm(lat1,lng1,lat2,lng2){const R=6371;const dLat=(lat2-lat1)*Math.PI/180;const dLng=(lng2-lng1)*Math.PI/180;const a=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)*Math.sin(dLng/2);const c=2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));return R*c}
 function normalize(text){return String(text||"").normalize("NFKC").trim().toLowerCase().replace(/[\s　\-ー_]+/g,"")}
 function isLooseMatch(query,target){const q=normalize(query);const t=normalize(target);if(!q)return true;if(t.includes(q))return true;let qi=0;for(let i=0;i<t.length&&qi<q.length;i++){if(t[i]===q[qi])qi++}return qi===q.length}
+function parseKeywords(input){return String(input||"").split(/[、,，・\/\s　]+/).map(s=>s.trim()).filter(Boolean)}
+function mapSupabaseRow(row){return{storeId:row.store_id||`${row.store_name}|${row.lat}|${row.lng}`,storeName:row.store_name,storeType:row.store_type||"",lat:row.lat,lng:row.lng,address:row.address||"",matchedItem:row.item_name||row.group_name,matchedPrice:row.price,category:row.category||"",subcategory:row.subcategory||"",lastSeen:row.valid_date||"",distanceKm:getDistanceKm(currentLocation.lat,currentLocation.lng,row.lat,row.lng)}}
 function formatDate(yyyymmdd){const value=String(yyyymmdd||"");if(value.length!==8)return value||"-";return value.slice(0,4)+"/"+value.slice(4,6)+"/"+value.slice(6,8)}
 const userLocationIcon = L.divIcon({
   className: '',
@@ -122,8 +124,43 @@ async function fetchFromSupabase(keyword, category, subcategory, storeType, radi
   if (!res.ok) throw new Error(`Supabase API エラー (${res.status})`);
   return res.json();
 }
+// 1キーワード分のマッチ取得（Supabase / JSON 共通インターフェース）
+async function getMatchesForKeyword(keyword, category, subcategory, storeType, radiusKm) {
+  if (CONFIG.DATA_SOURCE === 'supabase') {
+    const rows = await fetchFromSupabase(keyword, category, subcategory, storeType, radiusKm);
+    return rows
+      .filter(row => row.lat && row.lng)
+      .map(mapSupabaseRow)
+      .filter(r => r.distanceKm <= radiusKm + 0.5);
+  }
+  // JSON モード
+  return stores.flatMap(store => {
+    if (storeType && store.type !== storeType) return [];
+    const distanceKm = getDistanceKm(currentLocation.lat, currentLocation.lng, store.lat, store.lng);
+    if (distanceKm > radiusKm) return [];
+    return store.items
+      .filter(item => !category || item.category === category)
+      .filter(item => !keyword  || isLooseMatch(keyword, item.name))
+      .map(item => ({
+        storeId:      `${store.name}|${store.lat}|${store.lng}`,
+        storeName:    store.name,
+        storeType:    store.type,
+        lat:          store.lat,
+        lng:          store.lng,
+        address:      store.address    || '',
+        matchedItem:  item.name,
+        matchedPrice: item.price,
+        category:     item.category    || '',
+        subcategory:  item.subcategory || '',
+        lastSeen:     item.last_seen   || '',
+        distanceKm,
+      }));
+  });
+}
+
 async function searchItems() {
-  const keyword      = keywordInput.value.trim();
+  const keywordRaw   = keywordInput.value.trim();
+  const keywords     = parseKeywords(keywordRaw);
   const category     = categorySelect.value;
   const subcatEl     = document.getElementById('subcategorySelect');
   const subcategory  = subcatEl ? subcatEl.value : '';
@@ -131,7 +168,7 @@ async function searchItems() {
   const sortBy       = sortSelect.value;
   const radiusKm     = Number(radiusInput.value || CONFIG.DEFAULT_RADIUS || 3);
 
-  searchStatusEl.textContent  = `検索語: ${keyword || '未入力'}`;
+  searchStatusEl.textContent  = `検索語: ${keywords.length ? keywords.join('、') : '未入力'}`;
   radiusStatusEl.textContent  = `検索半径: ${radiusKm}km`;
   filterStatusEl.textContent  = `絞り込み: ${[
     category    ? `カテゴリ=${category}`        : null,
@@ -143,53 +180,16 @@ async function searchItems() {
   messageEl.textContent = '';
   clearStoreMarkers();
 
-  let matches = [];
+  // ── 複数キーワード: 合計金額でストア比較 ──────────────────
+  if (keywords.length > 1) {
+    await searchMultiItems(keywords, category, subcategory, storeType, radiusKm, sortBy);
+    return;
+  }
 
+  // ── 単一キーワード: 従来どおり商品単位で表示 ──────────────
+  let matches = [];
   try {
-    if (CONFIG.DATA_SOURCE === 'supabase') {
-      const rows = await fetchFromSupabase(keyword, category, subcategory, storeType, radiusKm);
-      const deg = radiusKm / 111;
-      console.log('[si] rows:', rows.length, 'currentLocation:', currentLocation, 'radiusKm:', radiusKm);
-      matches = rows
-        .filter(row => row.lat && row.lng)
-        .map(row => ({
-          storeName:    row.store_name,
-          storeType:    row.store_type  || '',
-          lat:          row.lat,
-          lng:          row.lng,
-          address:      row.address     || '',
-          matchedItem:  row.item_name   || row.group_name,
-          matchedPrice: row.price,
-          category:     row.category    || '',
-          subcategory:  row.subcategory || '',
-          lastSeen:     row.valid_date  || '',
-          distanceKm:   getDistanceKm(currentLocation.lat, currentLocation.lng, row.lat, row.lng),
-        }))
-        .filter(r => r.distanceKm <= radiusKm + 0.5);
-      console.log('[si] matches after filter:', matches.length);
-    } else {
-      matches = stores.flatMap(store => {
-        if (storeType && store.type !== storeType) return [];
-        const distanceKm = getDistanceKm(currentLocation.lat, currentLocation.lng, store.lat, store.lng);
-        if (distanceKm > radiusKm) return [];
-        return store.items
-          .filter(item => !category || item.category === category)
-          .filter(item => !keyword  || isLooseMatch(keyword, item.name))
-          .map(item => ({
-            storeName:    store.name,
-            storeType:    store.type,
-            lat:          store.lat,
-            lng:          store.lng,
-            address:      store.address    || '',
-            matchedItem:  item.name,
-            matchedPrice: item.price,
-            category:     item.category    || '',
-            subcategory:  item.subcategory || '',
-            lastSeen:     item.last_seen   || '',
-            distanceKm,
-          }));
-      });
-    }
+    matches = await getMatchesForKeyword(keywords[0] || '', category, subcategory, storeType, radiusKm);
   } catch(err) {
     messageEl.textContent = err.message;
     return;
@@ -241,6 +241,116 @@ async function searchItems() {
       if (card) { card.classList.add('active'); card.scrollIntoView({behavior:'smooth',block:'nearest'}); }
     });
     storeMarkers.push({ marker, lat: row.lat, lng: row.lng });
+  });
+}
+
+// ── 複数商品検索: 各ストアで商品ごとの最安を集計し、合計金額順に表示 ──
+async function searchMultiItems(keywords, category, subcategory, storeType, radiusKm, sortBy) {
+  let perKeyword = [];
+  try {
+    perKeyword = await Promise.all(
+      keywords.map(k => getMatchesForKeyword(k, category, subcategory, storeType, radiusKm))
+    );
+  } catch(err) {
+    messageEl.textContent = err.message;
+    return;
+  }
+
+  // ストアごとに、キーワードごとの最安商品を集計
+  const storeMap = new Map();
+  perKeyword.forEach((matches, ki) => {
+    matches.forEach(m => {
+      let s = storeMap.get(m.storeId);
+      if (!s) {
+        s = {
+          storeId:    m.storeId,
+          storeName:  m.storeName,
+          storeType:  m.storeType,
+          lat:        m.lat,
+          lng:        m.lng,
+          address:    m.address,
+          distanceKm: m.distanceKm,
+          items:      new Array(keywords.length).fill(null),
+        };
+        storeMap.set(m.storeId, s);
+      }
+      const cur = s.items[ki];
+      if (!cur || m.matchedPrice < cur.matchedPrice) s.items[ki] = m;
+    });
+  });
+
+  const storeResults = [...storeMap.values()].map(s => {
+    const found = s.items.filter(Boolean);
+    return {
+      ...s,
+      matchedCount: found.length,
+      total:        found.reduce((sum, it) => sum + it.matchedPrice, 0),
+      latestSeen:   found.reduce((mx, it) => String(it.lastSeen) > mx ? String(it.lastSeen) : mx, ''),
+    };
+  });
+
+  // 全商品そろっているストアを優先し、その中で並び順を適用
+  storeResults.sort((a, b) => {
+    if (b.matchedCount !== a.matchedCount) return b.matchedCount - a.matchedCount;
+    if (sortBy === 'distance') return a.distanceKm - b.distanceKm || a.total - b.total;
+    if (sortBy === 'updated')  return b.latestSeen.localeCompare(a.latestSeen) || a.total - b.total;
+    return a.total - b.total || a.distanceKm - b.distanceKm;
+  });
+
+  resultCountEl.textContent = `${storeResults.length}店舗`;
+
+  if (storeResults.length === 0) {
+    resultsEl.innerHTML = '<p class="empty-state">該当する商品が見つかりませんでした。商品名・カテゴリ・半径を変えてみてください。</p>';
+    summaryTextEl.textContent = '';
+    return;
+  }
+
+  const fullMatch = storeResults.filter(s => s.matchedCount === keywords.length);
+  const cheapestTotal = fullMatch.length ? Math.min(...fullMatch.map(s => s.total)) : null;
+  summaryTextEl.textContent =
+    `${keywords.length}商品の合計金額で比較（全商品あり: ${fullMatch.length}店舗）`;
+
+  resultsEl.innerHTML = storeResults.map((s, i) => {
+    const isCheapest  = s.matchedCount === keywords.length && s.total === cheapestTotal;
+    const isPartial   = s.matchedCount < keywords.length;
+    const itemLines = keywords.map((k, ki) => {
+      const it = s.items[ki];
+      return it
+        ? `<div class="result-item-line"><span class="item-kw">${k}</span> ${it.matchedItem} <strong>${it.matchedPrice}円</strong></div>`
+        : `<div class="result-item-line missing"><span class="item-kw">${k}</span> 取扱なし</div>`;
+    }).join('');
+    return `<article class="result-card ${isCheapest ? 'cheapest' : ''} ${isPartial ? 'partial' : ''}" data-index="${i}" title="クリックで地図に移動">
+      <div class="result-top"><div>
+        <div class="result-rank">${i+1}. ${s.storeName}</div>
+        <div class="result-meta">${s.storeType} ・ 約 ${s.distanceKm.toFixed(2)}km ・ ${s.matchedCount}/${keywords.length}品</div>
+        <div class="result-price">合計 ${s.total}円${isPartial ? `（${s.matchedCount}品分）` : ''}</div>
+        ${itemLines}
+      </div>${isCheapest ? '<span class="cheapest-tag">最安</span>' : ''}</div>
+    </article>`;
+  }).join('');
+
+  resultsEl.onclick = e => {
+    const card = e.target.closest('.result-card');
+    if (card) onCardClick(Number(card.dataset.index));
+  };
+
+  storeResults.forEach((s, i) => {
+    const popupLines = keywords.map((k, ki) => {
+      const it = s.items[ki];
+      return it ? `${k}: ${it.matchedItem} <strong>${it.matchedPrice}円</strong>` : `${k}: 取扱なし`;
+    }).join('<br>');
+    const marker = L.marker([s.lat, s.lng]).addTo(map).bindPopup(
+      `<strong>${s.storeName}</strong><br>${s.storeType}<br>` +
+      popupLines +
+      `<br>合計: <strong>${s.total}円</strong>（${s.matchedCount}/${keywords.length}品）` +
+      `<br>起点から約 ${s.distanceKm.toFixed(2)}km`
+    );
+    marker.on('click', () => {
+      document.querySelectorAll('.result-card').forEach(el => el.classList.remove('active'));
+      const card = document.querySelector(`.result-card[data-index="${i}"]`);
+      if (card) { card.classList.add('active'); card.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+    });
+    storeMarkers.push({ marker, lat: s.lat, lng: s.lng });
   });
 }
 async function populateFilters() {
